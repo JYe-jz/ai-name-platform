@@ -1,0 +1,14 @@
+{
+  "name": "ai-name-platform",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "AI 起名平台：流式生成名字与寓意，支持多模型切换，历史记录存 Supabase",
+  "scripts": {
+    "dev": "vercel dev",
+    "start": "vercel dev"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4"
+  }
+}

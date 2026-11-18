@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI 起名平台 · 智能起名助手</title>
+<style>
+:root{--ink:#1f2a26;--green:#25604f;--gold:#b8863b;--line:#e2e2dc;--bg:#f7f6f2;--card:#fff}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);line-height:1.7}
+header{background:linear-gradient(135deg,#234b41 0%,#2f6b58 55%,#3f8570 100%);color:#fff;padding:34px 20px 30px;text-align:center}
+header h1{margin:0 0 6px;font-size:26px;letter-spacing:2px;font-weight:600}
+header p{margin:0;font-size:13px;opacity:.85;letter-spacing:1px}
+.wrap{max-width:860px;margin:-18px auto 0;padding:0 16px 40px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;box-shadow:0 6px 20px rgba(31,42,38,.06);margin-bottom:16px}
+label{display:block;font-size:13px;font-weight:600;color:var(--green);margin-bottom:6px}
+textarea{width:100%;min-height:92px;resize:vertical;border:1px solid var(--line);border-radius:10px;padding:12px;font-size:15px;font-family:inherit;outline:none}
+textarea:focus{border-color:var(--green)}
+.row{display:flex;gap:12px;margin-top:14px;flex-wrap:wrap}
+.field{flex:1 1 200px}
+select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:14px;background:#fff;font-family:inherit;outline:none}
+button{margin-top:16px;width:100%;padding:13px;border:none;border-radius:10px;background:var(--green);color:#fff;font-size:16px;font-weight:600;letter-spacing:1px;cursor:pointer}
+button:hover:not(:disabled){background:#1d4d40}
+button:disabled{background:#9db3ac;cursor:not-allowed}
+.result-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.result-head h2{margin:0;font-size:16px;color:var(--green)}
+.badge{font-size:12px;color:var(--gold);border:1px solid #e8d9be;background:#fdf8ee;padding:2px 9px;border-radius:20px}
+.output{white-space:pre-wrap;font-size:15px;min-height:120px;padding:14px;background:#fbfaf7;border:1px dashed var(--line);border-radius:10px;color:#2c3733}
+.output.placeholder{color:#9aa8a3;font-size:14px}
+.cursor{display:inline-block;width:8px;height:16px;background:var(--green);vertical-align:-2px;animation:blink 1s steps(2,start) infinite}
+@keyframes blink{to{visibility:hidden}}
+.history-item{border-bottom:1px solid #f0efe9;padding:12px 0;font-size:14px}
+.history-item:last-child{border-bottom:none}
+.history-meta{display:flex;gap:10px;font-size:12px;color:#8a9791;margin-bottom:4px}
+.history-req{font-weight:600;color:#2c3733;margin-bottom:2px}
+.history-res{color:#5a6a64;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.empty{color:#9aa8a3;font-size:14px}
+.err{color:#c0392b}
+footer{text-align:center;font-size:12px;color:#9aa8a3;padding:8px 0 26px}
+@media(max-width:560px){header h1{font-size:21px}.card{padding:16px}}
+</style>
+</head>
+<body>
+<header>
+<h1>AI 起名平台</h1>
+<p>输入你的需求，AI 实时为你生成名字与寓意</p>
+</header>
+<div class="wrap">
+<div class="card">
+<label for="requirement">起名需求</label>
+<textarea id="requirement" placeholder="例如：男孩、姓李、国风、希望有山水的意境"></textarea>
+<div class="row">
+<div class="field">
+<label for="style">起名风格</label>
+<select id="style">
+<option value="国风">国风</option>
+<option value="现代简约">现代简约</option>
+<option value="英文名字">英文名字</option>
+</select>
+</div>
+<div class="field">
+<label for="model">使用模型</label>
+<select id="model"></select>
+</div>
+</div>
+<button id="submitBtn">开始起名</button>
+</div>
+
+<div class="card">
+<div class="result-head">
+<h2>生成结果</h2>
+<span class="badge" id="modelBadge">等待中</span>
+</div>
+<div class="output placeholder" id="output">结果会在这里流式出现，边生成边显示。</div>
+</div>
+
+<div class="card">
+<div class="result-head">
+<h2>历史记录</h2>
+<span class="badge" id="historyCount">0 条</span>
+</div>
+<div id="history"></div>
+</div>
+<footer>数据存储于 Supabase · 支持多模型切换</footer>
+</div>
+
+<script>
+const btn = document.getElementById('submitBtn');
+const out = document.getElementById('output');
+const badge = document.getElementById('modelBadge');
+const modelSel = document.getElementById('model');
+const histBox = document.getElementById('history');
+const histCount = document.getElementById('historyCount');
+
+let busy = false;
+
+async function loadModels() {
+  try {
+    const r = await fetch('/api/model-list');
+    const d = await r.json();
+    modelSel.innerHTML = '';
+    (d.models || []).forEach(m => {
+      const o = document.createElement('option');
+      o.value = m.key;
+      o.textContent = m.label;
+      modelSel.appendChild(o);
+    });
+    if (!modelSel.options.length) throw new Error('empty');
+  } catch {
+    const fallback = [['qwen','通义千问 Qwen2.5'],['deepseek','DeepSeek V3'],['kimi','Kimi K2'],['glm','智谱 GLM']];
+    modelSel.innerHTML = '';
+    fallback.forEach(([k,l]) => {
+      const o = document.createElement('option');
+      o.value = k; o.textContent = l;
+      modelSel.appendChild(o);
+    });
+  }
+}
+
+async function loadHistory() {
+  try {
+    const r = await fetch('/api/history?limit=20');
+    const d = await r.json();
+    const items = d.items || [];
+    histCount.textContent = items.length + ' 条';
+    if (!items.length) { histBox.innerHTML = '<div class="empty">还没有记录，生成一次试试。</div>'; return; }
+    histBox.innerHTML = items.map(it => {
+      const t = new Date(it.created_at).toLocaleString('zh-CN', { hour12: false });
+      const res = (it.name_result || '').replace(/</g,'&lt;');
+      return '<div class="history-item">' +
+        '<div class="history-meta"><span>' + it.model_name + '</span><span>' + t + '</span></div>' +
+        '<div class="history-req">' + (it.user_requirement || '').replace(/</g,'&lt;') + '</div>' +
+        '<div class="history-res">' + res + '</div>' +
+        '</div>';
+    }).join('');
+  } catch {
+    histBox.innerHTML = '<div class="empty err">历史记录加载失败</div>';
+  }
+}
+
+async function start() {
+  if (busy) return;
+  const requirement = document.getElementById('requirement').value.trim();
+  if (!requirement) { out.className = 'output err'; out.textContent = '请先输入起名需求。'; return; }
+
+  busy = true;
+  btn.disabled = true;
+  btn.textContent = '生成中…';
+  out.className = 'output';
+  out.textContent = '';
+  const cur = document.createElement('span');
+  cur.className = 'cursor';
+  out.appendChild(cur);
+  badge.textContent = modelSel.options[modelSel.selectedIndex]?.textContent || '生成中';
+
+  try {
+    const resp = await fetch('/api/name', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requirement,
+        model: modelSel.value,
+        style: document.getElementById('style').value,
+      }),
+    });
+
+    if (!resp.ok) {
+      let msg = '请求失败（HTTP ' + resp.status + '）';
+      try { const e = await resp.json(); msg = e.error || msg; } catch {}
+      throw new Error(msg);
+    }
+
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const parts = buf.split('\n\n');
+      buf = parts.pop() || '';
+      for (const part of parts) {
+        const line = part.split('\n').find(l => l.trim().startsWith('data:'));
+        if (!line) continue;
+        try {
+          const evt = JSON.parse(line.trim().slice(5).trim());
+          if (evt.text) { out.insertBefore(document.createTextNode(evt.text), cur); }
+          if (evt.error) { throw new Error(evt.error); }
+        } catch (e) { if (e.message && !e.message.includes('JSON')) throw e; }
+      }
+    }
+    if (cur.parentNode) cur.remove();
+    loadHistory();
+  } catch (err) {
+    if (cur.parentNode) cur.remove();
+    out.className = 'output err';
+    out.textContent = '出错了：' + err.message;
+  } finally {
+    busy = false;
+    btn.disabled = false;
+    btn.textContent = '开始起名';
+  }
+}
+
+btn.addEventListener('click', start);
+document.getElementById('requirement').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) start();
+});
+
+loadModels();
+loadHistory();
+</script>
+</body>
+</html>
